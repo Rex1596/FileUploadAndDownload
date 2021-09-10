@@ -1,310 +1,334 @@
 package com.rex.api.util;
 
-import com.rex.api.entity.HttpResponse;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import com.alibaba.fastjson.JSONObject;
+import org.apache.http.Consts;
+import org.apache.http.HttpEntity;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.ContentType;
+import org.apache.http.entity.mime.HttpMultipartMode;
+import org.apache.http.entity.mime.MultipartEntityBuilder;
+import org.apache.http.entity.mime.content.StringBody;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Author lzw
- * Create 2021/8/26
+ * Create 2021/9/7
  * Description
  */
 public class HttpUtils {
-    private static final Logger LOGGER = LoggerFactory.getLogger(HttpUtils.class);
-    /**
-     * multipart/form-data 格式发送数据时各个部分分隔符的前缀,必须为 --
-     */
-    private static final String BOUNDARY_PREFIX = "--";
-    /**
-     * 回车换行,用于一行的结尾
-     */
-    private static final String LINE_END = "\r\n";
-
-    /**
-     * post 请求：以表单方式提交数据
-     * <p>
-     * 由于 multipart/form-data 不是 http 标准内容，而是属于扩展类型，
-     * 因此需要自己构造数据结构，具体如下：
-     * <p>
-     * 1、首先，设置 Content-Type
-     * <p>
-     * Content-Type: multipart/form-data; boundary=${bound}
-     * <p>
-     * 其中${bound} 是一个占位符，代表我们规定的分割符，可以自己任意规定，
-     * 但为了避免和正常文本重复了，尽量要使用复杂一点的内容
-     * <p>
-     * 2、设置主体内容
-     * <p>
-     * --${bound}
-     * Content-Disposition: form-data; name="userName"
-     * <p>
-     * Andy
-     * --${bound}
-     * Content-Disposition: form-data; name="file"; filename="测试.excel"
-     * Content-Type: application/octet-stream
-     * <p>
-     * 文件内容
-     * --${bound}--
-     * <p>
-     * 其中${bound}是之前头信息中的分隔符，如果头信息中规定是123，那这里也要是123；
-     * 可以很容易看到，这个请求提是多个相同部分组成的：
-     * 每一部分都是以--加分隔符开始的，然后是该部分内容的描述信息，然后一个回车换行，然后是描述信息的具体内容；
-     * 如果传送的内容是一个文件的话，那么还会包含文件名信息以及文件内容类型。
-     * 上面第二部分是一个文件体的结构，最后以--分隔符--结尾，表示请求体结束
-     * <p>
-     * urlStr      请求的url
-     * filePathMap key 参数名，value 文件的路径
-     * keyValues   普通参数的键值对
-     */
-    public static HttpResponse postFormData(String urlStr, Map<String, String> filePathMap, Map<String, Object> keyValues, Map<String, Object> headers) throws IOException {
-        HttpResponse response;
-        HttpURLConnection conn = getHttpURLConnection(urlStr, headers);
-        //分隔符，可以任意设置，这里设置为 MyBoundary+ 时间戳（尽量复杂点，避免和正文重复）
-        String boundary = "MyBoundary" + System.currentTimeMillis();
-        //设置 Content-Type 为 multipart/form-data; boundary=${boundary}
-        conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
-
-        //发送参数数据
-        try (DataOutputStream out = new DataOutputStream(conn.getOutputStream())) {
-            //发送普通参数
-            if (keyValues != null && !keyValues.isEmpty()) {
-                for (Map.Entry<String, Object> entry : keyValues.entrySet()) {
-                    writeSimpleFormField(boundary, out, entry);
-                }
-            }
-            //发送文件类型参数
-            if (filePathMap != null && !filePathMap.isEmpty()) {
-                for (Map.Entry<String, String> filePath : filePathMap.entrySet()) {
-                    writeFile(filePath.getKey(), filePath.getValue(), boundary, out);
-                }
-            }
-
-            //写结尾的分隔符--${boundary}--,然后回车换行
-            String endStr = BOUNDARY_PREFIX + boundary + BOUNDARY_PREFIX + LINE_END;
-            out.write(endStr.getBytes());
-        } catch (Exception e) {
-            LOGGER.error("HttpUtils.postFormData 请求异常！", e);
-            response = new HttpResponse(500, e.getMessage());
-            return response;
-        }
-
-        return getHttpResponse(conn);
-    }
-
-    /**
-     * 获得连接对象
-     */
-    private static HttpURLConnection getHttpURLConnection(String urlStr, Map<String, Object> headers) throws IOException {
-        URL url = new URL(urlStr);
-        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-        //设置超时时间
-        conn.setConnectTimeout(50000);
-        conn.setReadTimeout(50000);
-        //允许输入流
-        conn.setDoInput(true);
-        //允许输出流
-        conn.setDoOutput(true);
-        //不允许使用缓存
-        conn.setUseCaches(false);
-        //请求方式
-        conn.setRequestMethod("POST");
-        //设置编码 utf-8
-        conn.setRequestProperty("Charset", "UTF-8");
-        //设置为长连接
-        conn.setRequestProperty("connection", "keep-alive");
-
-        //设置其他自定义 headers
-        if (headers != null && !headers.isEmpty()) {
-            for (Map.Entry<String, Object> header : headers.entrySet()) {
-                conn.setRequestProperty(header.getKey(), header.getValue().toString());
-            }
-        }
-
-        return conn;
-    }
-
-    private static HttpResponse getHttpResponse(HttpURLConnection conn) {
-        HttpResponse response;
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
-            int responseCode = conn.getResponseCode();
-            StringBuilder responseContent = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                responseContent.append(line);
-            }
-            response = new HttpResponse(responseCode, responseContent.toString());
-        } catch (Exception e) {
-            LOGGER.error("获取 HTTP 响应异常！", e);
-            response = new HttpResponse(500, e.getMessage());
-        }
-        return response;
-    }
-
-    /**
-     * 写文件类型的表单参数
-     * <p>
-     * paramName 参数名
-     * filePath  文件路径
-     * boundary  分隔符
-     */
-    private static void writeFile(String paramName, String filePath, String boundary,
-                                  DataOutputStream out) {
-        try (BufferedReader fileReader = new BufferedReader(new InputStreamReader(new FileInputStream(filePath)))) {
-            //  写分隔符--${boundary}，并回车换行
-            String boundaryStr = BOUNDARY_PREFIX + boundary + LINE_END;
-            out.write(boundaryStr.getBytes());
-            // 写描述信息(文件名设置为上传文件的文件名)：
-            // 写 Content-Disposition: form-data; name="参数名"; filename="文件名"，并回车换行
-            // 写 Content-Type: application/octet-stream，并两个回车换行
-            String fileName = new File(filePath).getName();
-            String contentDispositionStr = String.format("Content-Disposition: form-data; name=\"%s\"; filename=\"%s\"", paramName, fileName) + LINE_END;
-            out.write(contentDispositionStr.getBytes());
-            String contentType = "Content-Type: application/octet-stream" + LINE_END + LINE_END;
-            out.write(contentType.getBytes());
-
-            String line;
-            while ((line = fileReader.readLine()) != null) {
-                out.write(line.getBytes());
-            }
-            //回车换行
-            out.write(LINE_END.getBytes());
-        } catch (Exception e) {
-            LOGGER.error("写文件类型的表单参数异常", e);
-        }
-    }
-
-    /**
-     * 写普通的表单参数
-     * <p>
-     * boundary 分隔符
-     * entry    参数的键值对
-     */
-    private static void writeSimpleFormField(String boundary, DataOutputStream out, Map.Entry<String, Object> entry) throws IOException {
-        //写分隔符--${boundary}，并回车换行
-        String boundaryStr = BOUNDARY_PREFIX + boundary + LINE_END;
-        out.write(boundaryStr.getBytes());
-        //写描述信息：Content-Disposition: form-data; name="参数名"，并两个回车换行
-        String contentDispositionStr = String.format("Content-Disposition: form-data; name=\"%s\"", entry.getKey()) + LINE_END + LINE_END;
-        out.write(contentDispositionStr.getBytes());
-        //写具体内容：参数值，并回车换行
-        String valueStr = entry.getValue().toString() + LINE_END;
-        out.write(valueStr.getBytes());
-    }
-
-    public static void main(String[] args) throws IOException {
-        //请求 uploadUrl
-        String uploadUrl = "http://localhost:33001/publicFiles/v1/upload";
-
-        // keyValues 保存普通参数
-        Map<String, Object> keyValues = new HashMap<>();
-        keyValues.put("fileName", "abc");
-        keyValues.put("isOverwrite", 1);
-
-        // filePathMap 保存文件类型的参数名和文件路径
-        Map<String, String> filePathMap = new HashMap<>();
-        String paramName = "file";
-        String filePath = "E:\\abc";
-        filePathMap.put(paramName, filePath);
-
-        //headers
-        Map<String, Object> headers = new HashMap<>();
-
-        HttpResponse response = postFormData(uploadUrl, filePathMap, keyValues, headers);
-        System.out.println(response);
+    private final static String BOUNDARY = UUID.randomUUID().toString()
+            .toLowerCase().replaceAll("-", "");// 边界标识
+    private final static String PREFIX = "--";// 必须存在
+    private final static String LINE_END = "\r\n";
 
 
-        /*
-         * Author lzw
-         * Description 下载请求
-         **/
-        String downloadUrl = "http://localhost:33001/publicFiles/v1/download";
 
-        // keyValues 保存普通参数
-        keyValues = new HashMap<>();
-        keyValues.put("fileName", "abc");
-
-
-        //headers
-        headers = new HashMap<>();
-
-        response = postFormData(downloadUrl, filePathMap, keyValues, headers);
-
-        System.out.println(response);
-        // 输出到文件
-        String filePath1 = "e:/test.txt";
-        String content = response.getContent();
-
-        string2File(content, filePath1);
-
-    }
-
-    /**
-     * 发送文本内容
-     */
-    public static HttpResponse postText(String urlStr, String filePath) throws IOException {
-        HttpResponse response;
-        URL url = new URL(urlStr);
-        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-        conn.setRequestMethod("POST");
-        conn.setRequestProperty("Content-Type", "text/plain");
-        conn.setDoOutput(true);
-        conn.setConnectTimeout(5000);
-        conn.setReadTimeout(5000);
-
-        try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(conn.getOutputStream()));
-             BufferedReader fileReader = new BufferedReader(new InputStreamReader(new FileInputStream(filePath)))) {
-            String line;
-            while ((line = fileReader.readLine()) != null) {
-                writer.write(line);
-            }
-
-        } catch (Exception e) {
-            LOGGER.error("HttpUtils.postText 请求异常！", e);
-            response = new HttpResponse(500, e.getMessage());
-            return response;
-        }
-
-        return getHttpResponse(conn);
-    }
-
-    /**
-     * 将字符串写入指定文件(当指定的父路径中文件夹不存在时，会最大限度去创建，以保证保存成功！)
-     *
-     * @param res      原字符串
-     * @param filePath 文件路径
-     */
-    public static void string2File(String res, String filePath) {
-        BufferedReader bufferedReader = null;
-        BufferedWriter bufferedWriter;
+    public static String doPost(String postUrl, InputStream inputStream) throws IOException {
+        OutputStream out = null;
+        HttpURLConnection conn = null;
+        InputStream ins = null;
+        ByteArrayOutputStream outStream = null;
         try {
-            File distFile = new File(filePath);
-            if (!distFile.getParentFile().exists()) System.out.println(distFile.getParentFile().mkdirs());
-            bufferedReader = new BufferedReader(new StringReader(res));
-            bufferedWriter = new BufferedWriter(new FileWriter(distFile));
-            char[] buf = new char[1024];          //字符缓冲区
-            int len;
-            while ((len = bufferedReader.read(buf)) != -1) {
-                bufferedWriter.write(buf, 0, len);
+            URL url = new URL(postUrl);
+
+            conn = (HttpURLConnection) url.openConnection();
+            // 发送POST请求必须设置如下两行
+            conn.setDoOutput(true);
+            conn.setUseCaches(false);
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/octet-stream");
+            conn.setRequestProperty("Cache-Control", "no-cache");
+            conn.connect();
+            conn.setConnectTimeout(10000);
+            out = conn.getOutputStream();
+
+            int bytes = 0;
+            byte[] buffer = new byte[1024];
+            while ((bytes = inputStream.read(buffer)) != -1) {
+                out.write(buffer, 0, bytes);
             }
-            bufferedWriter.flush();
-            bufferedReader.close();
-            bufferedWriter.close();
+            out.flush();
+            // 返回流
+            if (conn.getResponseCode() == HttpURLConnection.HTTP_OK) {
+                ins = conn.getInputStream();
+                outStream = new ByteArrayOutputStream();
+                byte[] data = new byte[1024];
+                int count = -1;
+                while ((count = ins.read(data, 0, 1024)) != -1) {
+                    outStream.write(data, 0, count);
+                }
+                return JSONObject.parseObject(outStream.toString("UTF-8")).toString();
+            }
+            return null;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return e.getLocalizedMessage();
+        } finally {
+            if (inputStream != null) {
+                inputStream.close();
+            }
+            if (out != null) {
+                out.close();
+            }
+            if (ins != null) {
+                ins.close();
+            }
+            if (outStream != null) {
+                outStream.close();
+            }
+            if (conn != null) {
+                conn.disconnect();
+            }
+        }
+    }
+
+
+    public static void inputStreamUpload(String url, String fileName, InputStream inputStream) {
+        //创建HttpClient对象
+        CloseableHttpClient client = HttpClients.createDefault();
+        //构建POST请求   请求地址请更换为自己的。
+        //1)
+        HttpPost post = new HttpPost(url);
+        try {
+            //文件路径请换成自己的
+            //2)
+            MultipartEntityBuilder builder = MultipartEntityBuilder.create();
+            builder.setMode(HttpMultipartMode.BROWSER_COMPATIBLE);
+            //第一个参数为 相当于 Form表单提交的file框的name值 第二个参数就是我们要发送的InputStream对象了
+            //第三个参数是文件名
+            //3)
+            builder.addBinaryBody("file", inputStream, ContentType.create("application/octet-stream"), fileName);
+            //4)构建请求参数 普通表单项
+            StringBody stringBody = new StringBody(fileName, ContentType.MULTIPART_FORM_DATA);
+            builder.addPart("fileName", stringBody);
+
+            HttpEntity entity = builder.build();
+            post.setEntity(entity);
+            //发送请求
+            CloseableHttpResponse httpResponse = client.execute(post);
+            entity = httpResponse.getEntity();
+            if (entity != null) {
+                inputStream = entity.getContent();
+                //转换为字节输入流
+                BufferedReader br = new BufferedReader(new InputStreamReader(inputStream, Consts.UTF_8));
+                String body = null;
+                while ((body = br.readLine()) != null) {
+                    System.out.println(body);
+                }
+            }
         } catch (IOException e) {
             e.printStackTrace();
         } finally {
-            if (bufferedReader != null) {
+            if (inputStream != null) {
                 try {
-                    bufferedReader.close();
+                    inputStream.close();
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
             }
         }
     }
+
+    public static String sendRequest(String requestUrl,
+                                     Map<String, String> requestText, InputStream requestFile) throws Exception{
+        HttpURLConnection conn = null;
+        InputStream input = null;
+        OutputStream os = null;
+        BufferedReader br = null;
+        StringBuffer buffer = null;
+        try {
+            URL url = new URL(requestUrl);
+            conn = (HttpURLConnection) url.openConnection();
+
+            conn.setDoOutput(true);
+            conn.setDoInput(true);
+            conn.setUseCaches(false);
+            conn.setConnectTimeout(1000 * 10);
+            conn.setReadTimeout(1000 * 10);
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Accept", "*/*");
+            conn.setRequestProperty("Connection", "keep-alive");
+            conn.setRequestProperty("User-Agent", "Mozilla/4.0 (compatible; MSIE 5.0; Windows NT; DigExt)");
+            conn.setRequestProperty("Charset", "UTF-8");
+            conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + BOUNDARY);
+            conn.connect();
+
+            // 往服务器端写内容 也就是发起http请求需要带的参数
+            os = new DataOutputStream(conn.getOutputStream());
+            // 请求参数部分
+            writeParams(requestText, os);
+            // 请求上传文件部分
+            int bytes = 0;
+            byte[] buff = new byte[1024];
+            while ((bytes = requestFile.read(buff)) != -1) {
+                os.write(buff, 0, bytes);
+            }
+            os.flush();
+
+            // 请求结束标志
+            String endTarget = PREFIX + BOUNDARY + PREFIX + LINE_END;
+            os.write(endTarget.getBytes());
+            os.flush();
+
+            // 读取服务器端返回的内容
+            System.out.println("======================响应体=========================");
+            System.out.println("ResponseCode:" + conn.getResponseCode()
+                    + ",ResponseMessage:" + conn.getResponseMessage());
+            if(conn.getResponseCode()==200){
+                input = conn.getInputStream();
+            }else{
+                input = conn.getErrorStream();
+            }
+
+            br = new BufferedReader(new InputStreamReader( input, "UTF-8"));
+            buffer = new StringBuffer();
+            String line = null;
+            while ((line = br.readLine()) != null) {
+                buffer.append(line);
+            }
+            //......
+            System.out.println("返回报文:" + buffer.toString());
+
+        } catch (Exception e) {
+            throw new Exception(e);
+        } finally {
+            try {
+                if (conn != null) {
+                    conn.disconnect();
+                    conn = null;
+                }
+
+                if (os != null) {
+                    os.close();
+                    os = null;
+                }
+
+                if (br != null) {
+                    br.close();
+                    br = null;
+                }
+            } catch (IOException ex) {
+                throw new Exception(ex);
+            }
+        }
+        return buffer.toString();
+    }
+    /**
+     * 对post参数进行编码处理并写入数据流中
+     * @throws Exception
+     *
+     * @throws IOException
+     *
+     * */
+    private static void writeParams(Map<String, String> requestText,
+                                    OutputStream os) throws Exception {
+        try{
+            String msg = "请求参数部分:\n";
+            if (requestText == null || requestText.isEmpty()) {
+                msg += "空";
+            } else {
+                StringBuilder requestParams = new StringBuilder();
+                Set<Map.Entry<String, String>> set = requestText.entrySet();
+                Iterator<Map.Entry<String, String>> it = set.iterator();
+                while (it.hasNext()) {
+                        Map.Entry<String, String> entry = it.next();
+                    requestParams.append(PREFIX).append(BOUNDARY).append(LINE_END);
+                    requestParams.append("Content-Disposition: form-data; name=\"")
+                            .append(entry.getKey()).append("\"").append(LINE_END);
+                    requestParams.append("Content-Type: text/plain; charset=utf-8")
+                            .append(LINE_END);
+                    requestParams.append("Content-Transfer-Encoding: 8bit").append(
+                            LINE_END);
+                    requestParams.append(LINE_END);// 参数头设置完以后需要两个换行，然后才是参数内容
+                    requestParams.append(entry.getValue());
+                    requestParams.append(LINE_END);
+                }
+                os.write(requestParams.toString().getBytes());
+                os.flush();
+
+                msg += requestParams.toString();
+            }
+
+            //System.out.println(msg);
+        }catch(Exception e){
+            throw new Exception(e);
+        }
+    }
+
+    /**
+     * 对post上传的文件进行编码处理并写入数据流中
+     *
+     * @throws IOException
+     *
+     * */
+    private static void writeFile(Map<String, MultipartFile> requestFile,
+                                  OutputStream os) throws Exception {
+        InputStream is = null;
+        try{
+            String msg = "请求上传文件部分:\n";
+            if (requestFile == null || requestFile.isEmpty()) {
+                msg += "空";
+            } else {
+                StringBuilder requestParams = new StringBuilder();
+                Set<Map.Entry<String, MultipartFile>> set = requestFile.entrySet();
+                Iterator<Map.Entry<String, MultipartFile>> it = set.iterator();
+                while (it.hasNext()) {
+                    Map.Entry<String, MultipartFile> entry = it.next();
+                    if(entry.getValue() == null){//剔除value为空的键值对
+                        continue;
+                    }
+                    requestParams.append(PREFIX).append(BOUNDARY).append(LINE_END);
+                    requestParams.append("Content-Disposition: form-data; name=\"")
+                            .append(entry.getKey()).append("\"; filename=\"")
+                            .append(entry.getValue().getName()).append("\"")
+                            .append(LINE_END);
+                    requestParams.append("Content-Type:")
+                            .append(entry.getValue().getContentType())
+                            .append(LINE_END);
+                    requestParams.append("Content-Transfer-Encoding: 8bit").append(
+                            LINE_END);
+                    requestParams.append(LINE_END);// 参数头设置完以后需要两个换行，然后才是参数内容
+
+                    os.write(requestParams.toString().getBytes());
+                    os.write(entry.getValue().getBytes());
+
+                    os.write(LINE_END.getBytes());
+                    os.flush();
+
+                    msg += requestParams.toString();
+                }
+            }
+            //System.out.println(msg);
+        }catch(Exception e){
+            throw new Exception(e);
+        }finally{
+            try{
+                if(is!=null){
+                    is.close();
+                }
+            }catch(Exception e){
+                throw new Exception(e);
+            }
+        }
+    }
+    public static void main(String[] args) throws Exception {
+        String str = "我是一個文件流";
+        InputStream inputStream = new ByteArrayInputStream(str.getBytes());
+        InputStream stream = new FileInputStream("d:/1.zip");
+//        System.out.println(doPost("http://localhost:31001/publicFiles/v1/uploadTemplateFile", stream));
+//        inputStreamUpload("http://localhost:31001/publicFiles/v1/uploadTemplateFile", "abc", stream);
+        Map<String,String> map = new HashMap<>();
+        map.put("fileName","abc");
+        sendRequest("http://localhost:31001/publicFiles/v1/uploadTemplateFile",map,inputStream);
+    }
 }
+

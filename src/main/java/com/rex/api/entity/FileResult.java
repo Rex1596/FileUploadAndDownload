@@ -11,6 +11,7 @@ public class FileResult implements Serializable {
 
     private int isSucc;
     private String msg;
+    private String fileName;
 
     public int getIsSucc() {
         return isSucc;
@@ -31,8 +32,26 @@ public class FileResult implements Serializable {
     public FileResult() {
     }
 
-    public FileResult(int isSucc, String msg) {
+    public String getFileName() {
+        return fileName;
+    }
+
+    public void setFileName(String fileName) {
+        this.fileName = fileName;
+    }
+
+    public FileResult(int isSucc, String msg, String fileName) {
         this.isSucc = isSucc;
         this.msg = msg;
+        this.fileName = fileName;
+    }
+
+    @Override
+    public String toString() {
+        return "FileResult{" +
+                "isSucc=" + isSucc +
+                ", msg='" + msg + '\'' +
+                ", fileName='" + fileName + '\'' +
+                '}';
     }
 }
