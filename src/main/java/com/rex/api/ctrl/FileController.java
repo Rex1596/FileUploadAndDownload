@@ -1,5 +1,7 @@
 package com.rex.api.ctrl;
 
+import cn.hutool.core.io.FileUtil;
+import cn.hutool.core.io.IoUtil;
 import com.rex.api.entity.FileResult;
 import com.rex.api.util.DateUtil;
 import io.swagger.annotations.Api;
@@ -16,6 +18,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.*;
 import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 /**
@@ -74,6 +77,51 @@ public class FileController {
         }
     }
 
+    @ApiOperation("参数查询模板上传: 上传文件名、输入流")
+    @ApiResponses({
+            @ApiResponse(code = 200, message = "上传成功", response = String.class),
+            @ApiResponse(code = 400, message = "请求错误，请检查参数"),
+            @ApiResponse(code = 500, message = "系统错误，请联系管理员")
+    })
+    // 单个文件上传
+    @RequestMapping(value = "/uploadTemplateInputStream")
+    public FileResult uploadTemplateInputStream(HttpServletRequest request) throws IOException {
+        Integer dateInteger = DateUtil.dateValueOfInteger(new Date());
+        String fileName = request.getParameter("fileName");
+        String fileFullPath = filePath + dateInteger + "/" + fileName+".csv";
+        log.info("fileFullPath:" + fileFullPath);
+        InputStream input = null;
+        FileOutputStream fos = null;
+        try {
+//            input = request.getInputStream();
+            input = request.getInputStream();
+            File newFile = new File(fileFullPath);
+            if (!newFile.getParentFile().exists()) {
+                log.info("创建文件夹" + newFile.getParentFile().mkdirs());
+            }
+            fos = new FileOutputStream(fileFullPath);
+            fos.write(new byte[]{(byte)0xEF, (byte)0xBB, (byte)0xBF});
+            int size;
+            byte[] buffer = new byte[1024];
+            while ((size = input.read(buffer, 0, 1024)) != -1) {
+                fos.write(buffer, 0, size);
+            }
+            log.info(fileFullPath + " 上传成功");
+            return new FileResult(1, "上传成功", fileName);
+        } catch (IOException e) {
+            //响应信息 json字符串格式
+            log.error("上传失败 " + e.getLocalizedMessage());
+            e.printStackTrace();
+            return new FileResult(0, e.getLocalizedMessage(), "");
+        } finally {
+            if (input != null) {
+                input.close();
+            }
+            if (fos != null) {
+                fos.close();
+            }
+        }
+    }
 
     @ApiOperation("文件下载: 文件名，1-参数查询模板（ID_日期）、0-其他文件下载（日期_ID）")
     @ApiResponses({

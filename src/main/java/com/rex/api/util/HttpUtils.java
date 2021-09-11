@@ -17,6 +17,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 /**
@@ -51,7 +52,7 @@ public class HttpUtils {
             conn.setConnectTimeout(10000);
             out = conn.getOutputStream();
 
-            int bytes = 0;
+            int bytes;
             byte[] buffer = new byte[1024];
             while ((bytes = inputStream.read(buffer)) != -1) {
                 out.write(buffer, 0, bytes);
@@ -90,7 +91,6 @@ public class HttpUtils {
             }
         }
     }
-
 
     public static void inputStreamUpload(String url, String fileName, InputStream inputStream) {
         //创建HttpClient对象

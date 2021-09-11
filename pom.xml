@@ -37,11 +37,11 @@
         </dependency>
         <!-- SpringBoot整合zookeeper客户端，需要zk集群版本在3.5.x以上 -->
         <!-- https://mvnrepository.com/artifact/org.springframework.cloud/spring-cloud-starter-zookeeper-discovery -->
-        <dependency>
+      <!--  <dependency>
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-zookeeper-discovery</artifactId>
             <version>2.2.1.RELEASE</version>
-        </dependency>
+        </dependency>-->
 
         <!-- swagger2 相关依赖 -->
         <dependency>
@@ -69,6 +69,12 @@
             <groupId>com.alibaba</groupId>
             <artifactId>fastjson</artifactId>
             <version>1.2.68</version>
+        </dependency>
+        <!-- huTool工具类 -->
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-all</artifactId>
+            <version>5.7.12</version>
         </dependency>
     </dependencies>
 

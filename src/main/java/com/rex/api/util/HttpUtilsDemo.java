@@ -16,7 +16,7 @@ import java.util.Map;
  * Description
  */
 public class HttpUtilsDemo {
-    private static final Logger LOGGER = LoggerFactory.getLogger(com.parameter.query.util.HttpUtils.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(HttpUtilsDemo.class);
     /**
      * multipart/form-data 格式发送数据时各个部分分隔符的前缀,必须为 --
      */
@@ -266,8 +266,7 @@ public class HttpUtilsDemo {
         //headers
         Map<String, Object> headers = new HashMap<>();
 
-        HttpResponse response = postFormData(url, filePathMap, keyValues, headers);
-        return response;
+        return postFormData(url, filePathMap, keyValues, headers);
     }
 
 
@@ -319,7 +318,7 @@ public class HttpUtilsDemo {
             if (!distFile.getParentFile().exists()) distFile.getParentFile().mkdirs();
             bufferedReader = new BufferedReader(new StringReader(res));
             bufferedWriter = new BufferedWriter(new FileWriter(distFile));
-            char buf[] = new char[1024];          //字符缓冲区
+            char[] buf = new char[1024];          //字符缓冲区
             int len;
             while ((len = bufferedReader.read(buf)) != -1) {
                 bufferedWriter.write(buf, 0, len);
@@ -370,7 +369,7 @@ class HttpResponse {
     }
 
     public String toString(){
-        return new StringBuilder("[ code = ").append(code)
-                .append(" , content = ").append(content).append(" ]").toString();
+        return "[ code = " + code +
+                " , content = " + content + " ]";
     }
 }
